@@ -45,7 +45,10 @@ BLOCKED = {     # (mode, findings?) -> what the hook tells the user
 
 def build_parser() -> argparse.ArgumentParser:
     env = os.environ.get
-    parser = argparse.ArgumentParser(prog="findmysecrets", description="Find hardcoded secrets in files and Git changes.")
+    parser = argparse.ArgumentParser(
+        prog="findmysecrets",
+        description="Find hardcoded secrets in files and Git changes.",
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("install-hook", help="install the pre-commit and pre-push hooks in the current repository")
@@ -148,7 +151,10 @@ def install_hooks(cwd: Path) -> list[Path]:
     for hook, body in zip(hooks, HOOKS.values(), strict=True):
         try:
             hook.parent.mkdir(parents=True, exist_ok=True)
-            hook.write_text("#!/bin/sh\n# Installed by FindMySecrets.\n" + body.format(python=shlex.quote(sys.executable)))
+            hook.write_text(
+                "#!/bin/sh\n# Installed by FindMySecrets.\n"
+                + body.format(python=shlex.quote(sys.executable))
+            )
             hook.chmod(0o755)
         except OSError as exc:              # e.g. core.hooksPath=/dev/null disables hooks
             raise ScanError(f"cannot write {hook}: {exc.strerror}") from exc

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "findmysecrets"
+version = "0.8.6"
+description = "AI-assisted secret detection for source code and Git workflows"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []  # standard library only
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.17", "mypy>=1.8"]
+
+[project.scripts]
+findmysecrets = "secretscan.cli:main"
+
+[tool.setuptools]
+packages = ["secretscan"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["samples"]            # insecure on purpose: they are what the scanner must find
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "S", "C90", "SIM", "PL", "RUF", "UP"]
+# git is invoked with argument lists (never a shell) from PATH, like any Git tool.
+ignore = ["S603", "S607", "PLR2004"]
+mccabe.max-complexity = 15
+pylint.max-branches = 15
+flake8-bugbear.extend-immutable-calls = ["secretscan.scanner.Options", "secretscan.ai.AIConfig"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "S108", "S311", "PLR2004", "E501"]

@@ -1,0 +1,16 @@
+# Sample CI pipeline (GitHub Actions) with positive and negative cases.
+name: build
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}   # reference to the secret store
+      REGISTRY_TOKEN: $CI_JOB_TOKEN             # CI variable
+      API_KEY: YOUR_API_KEY                     # placeholder
+      REDIS_PASSWORD: "r3d1s-Pa55-2026"         # expected: hardcoded-credential
+      SMTP_PASSWORD: smtp-Pa55-2026             # expected: hardcoded-credential
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pytest

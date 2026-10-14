@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+*.zip
+
+# Fake provider tokens generated locally (see samples/make_fake_tokens.py).
+# Not versioned, so that GitHub push protection never blocks a push.
+samples/generated/
+
+# Database created if samples/app.py is executed
+example.db

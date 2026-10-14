@@ -1,0 +1,108 @@
+# Git hooks, real 'git commit' and 'git push' runs (offline, no models installed)
+
+$ findmysecrets install-hook
+pre-commit hook installed: <repo>/.git/hooks/pre-commit
+pre-push hook installed: <repo>/.git/hooks/pre-push
+
+$ cp samples/FicheroT2.docx samples/app.py . && git add . && SECRETSCAN_AI=off git commit -m 'add sample'
+FicheroT2.docx:7:23  hardcoded-credential [high]  valid_password = se...23 (17 chars)  id=f125d268501b
+    why: credential-like name receives a literal; compared with the password read by getpass() (line 13)
+    by:  rules, flow
+app.py:7:23  hardcoded-credential [high]  valid_password = se...23 (17 chars)  id=a3887d632625
+    why: credential-like name receives a literal; compared with the password read by getpass() (line 13)
+    by:  rules, flow
+2 finding(s) in 2 file(s); 2 suppressed; 0 skipped, 0 excluded
+AI: off (rules and data flow only)
+Commit blocked: remove the secret (rotate it if it was ever pushed), or mark a false positive with '# IGNORE' on its line or 'findmysecrets allow <id>'.
+[exit code 1: commit blocked]
+
+$ # db.py is committed; then a change points an existing literal at a password argument
+$ git diff
+-    return psycopg2.connect(host="db")
++    return psycopg2.connect(host="db", password=session_tag)
+
+$ SECRETSCAN_AI=off git commit -m 'use tag as password'
+db.py:3:16  credential-flow [high]  session_tag = Zq...26 (12 chars)  id=7ab7e625fc1e
+    why: passed as password= to connect() (line 7)
+    by:  flow
+1 finding(s) in 1 file(s); 0 suppressed; 0 skipped, 0 excluded
+AI: off (rules and data flow only)
+Commit blocked: remove the secret (rotate it if it was ever pushed), or mark a false positive with '# IGNORE' on its line or 'findmysecrets allow <id>'.
+[exit code 1: blocked although the diff holds no literal]
+
+$ # mark it as a test fixture (false positive) and commit again
+$ SECRETSCAN_AI=off git commit -m fixture
+0 finding(s) in 1 file(s); 1 suppressed; 0 skipped, 0 excluded
+AI: off (rules and data flow only)
+[exit code 0: committed]
+
+$ # settings.py and app.py are committed; then a change hardcodes the value in settings.py only
+$ git diff
+-DB_TAG = os.environ["DB_TAG"]
++DB_TAG = "Zq81-mnbv-26"
+
+$ SECRETSCAN_AI=off git commit -m 'default tag'
+settings.py:3:11  credential-flow [high]  DB_TAG = Zq...26 (12 chars)  id=0bccdea0bee5
+    why: passed as password= to connect() (app.py:7)
+    by:  flow
+1 finding(s) in 2 file(s); 0 suppressed; 0 skipped, 0 excluded
+AI: off (rules and data flow only)
+Commit blocked: remove the secret (rotate it if it was ever pushed), or mark a false positive with '# IGNORE' on its line or 'findmysecrets allow <id>'.
+[exit code 1: blocked: the use is in app.py, which did not change]
+
+$ SECRETSCAN_AI=off git commit -m fixtures   # JSON has no comments for '# IGNORE'
+fixtures/payment.json:1:16  hardcoded-credential [medium]  api_token = tok...ure (21 chars)  id=135b14800891
+    why: credential-like name receives a literal
+    by:  rules
+1 finding(s) in 1 file(s); 0 suppressed; 0 skipped, 0 excluded
+AI: off (rules and data flow only)
+Commit blocked: remove the secret (rotate it if it was ever pushed), or mark a false positive with '# IGNORE' on its line or 'findmysecrets allow <id>'.
+[exit code 1: commit blocked]
+
+$ findmysecrets allow 135b14800891 'test token of the payment sandbox'
+135b14800891 listed in <repo>/.secretscan-allow; commit that file so that the hook and every clone apply it
+
+$ cat .secretscan-allow
+135b14800891  # test token of the payment sandbox
+
+$ git add .secretscan-allow && SECRETSCAN_AI=off git commit -m fixtures
+0 finding(s) in 2 file(s); 1 suppressed; 0 skipped, 0 excluded
+AI: off (rules and data flow only)
+[exit code 0: committed]
+
+$ # default hook mode (--ai triage) with Ollama stopped: fail closed
+$ git commit -m legacy
+0 finding(s) in 1 file(s); 0 suppressed; 0 skipped, 0 excluded
+AI: triage, 1 model call(s), 0 to the chat model, 0 unverified citation(s)
+INCOMPLETE: legacy.py: model request to 127.0.0.1:9 failed: <urlopen error [Errno 111] Connection refused>; later files were checked without AI
+Commit blocked: the analysis is incomplete. Fix the model setup, or commit with SECRETSCAN_AI=off for a deterministic-only check.
+[exit code 1: commit blocked]
+
+$ # an empty bare repository plays the server
+$ git push origin main
+0 finding(s) in 5 file(s) of 5 commit(s); 1 suppressed; 0 skipped, 0 excluded
+AI: off (rules only)
+[exit code 0: pushed: first push, every commit checked]
+
+$ git add FicheroT2.docx && git commit --no-verify -m 'add Word sample'   # skips the pre-commit hook
+
+$ git push origin main
+FicheroT2.docx:7:23 (commit 316938d42b)  hardcoded-credential [medium]  valid_password = se...23 (17 chars)  id=f125d268501b
+    why: credential-like name receives a literal
+    by:  rules
+1 finding(s) in 1 file(s) of 1 commit(s); 1 suppressed; 0 skipped, 0 excluded
+AI: off (rules only)
+Push blocked: remove the secret from the commits listed (git commit --amend, git rebase -i), or mark a false positive with 'findmysecrets allow <id>'.
+error: failed to push some refs to '<server>'
+[exit code 1: push rejected: the server never receives the commit]
+
+$ git -C <server> log --oneline -1 main
+4bd54e5 fixtures
+[exit code 0: the server still ends at the previous commit]
+
+$ git reset --hard HEAD~1   # drop the commit (git rebase -i to edit an older one)
+
+$ git push origin main   # after a new commit
+0 finding(s) in 1 file(s) of 1 commit(s); 0 suppressed; 0 skipped, 0 excluded
+AI: off (rules only)
+[exit code 0: pushed: only the new commit is checked]

@@ -1,46 +1,39 @@
 # Live-model validation
 
-The test suite replaces the models with a fake server. These checks use the real
-ones; run them once and keep the outputs in `docs/evidence/`.
+The test suite uses fake model responses. These checks exercise real decision and chat endpoints; keep the outputs you want to retain under `docs/evidence/`.
 
 ## Setup
 
+Configure both models explicitly. The decision endpoint must support Ollama's `/v1/systemone`; the chat endpoint must be OpenAI-compatible.
+
 ```sh
-ollama --version                  # >= 0.35.1 (decision models: POST /v1/systemone)
-ollama pull clef-flash
-ollama pull <chat model>          # prefer a model that runs on this machine
-export SECRETSCAN_DECISION_MODEL=clef-flash
-export SECRETSCAN_CHAT_MODEL=<chat model>    # URLs default to http://localhost:11434/v1
+export SECRETSCAN_DECISION_MODEL="<decision-model>"
+export SECRETSCAN_DECISION_URL="http://localhost:11434/v1"
+export SECRETSCAN_CHAT_MODEL="<chat-model>"
+export SECRETSCAN_CHAT_URL="http://localhost:11434/v1"
+# export SECRETSCAN_CHAT_API_KEY="..."   # only when the chat endpoint needs one
 ```
 
-Before the checks, make one decision and one chat request, then run `ollama ps` on each
-server: both models must be loaded, at `100% GPU`. If one Ollama serves both, set
-`OLLAMA_MAX_LOADED_MODELS=2` and `OLLAMA_KEEP_ALIVE=30m` there.
+FindMySecrets reads these environment variables:
+
+| Variable | Purpose |
+|---|---|
+| `SECRETSCAN_AI` | Default AI mode for `scan`; the pre-commit hook uses `triage` when unset |
+| `SECRETSCAN_DECISION_MODEL` | Decision model used by `triage` |
+| `SECRETSCAN_DECISION_URL` | Decision API base; default `http://localhost:11434/v1` |
+| `SECRETSCAN_CHAT_MODEL` | Chat model used by `full` or escalated triage |
+| `SECRETSCAN_CHAT_URL` | Chat API base; default `http://localhost:11434/v1` |
+| `SECRETSCAN_CHAT_API_KEY` | Optional bearer token for the chat endpoint |
+
+`--threshold`, `--timeout`, and `--max-ai-calls` are CLI-only settings. If one Ollama instance serves both models, `OLLAMA_MAX_LOADED_MODELS=2` and `OLLAMA_KEEP_ALIVE=30m` can keep them resident; `OLLAMA_HOST` is only needed when configuring the Ollama server itself.
+
+Before validating, make one decision request and one chat request and verify that the intended models are loaded. Use only synthetic secrets.
 
 ## Checks
 
-1. **Decision model contract.** One request with several `noul` questions:
-   `findmysecrets scan samples/flow_cases.py --ai triage --format json > docs/evidence/flow_triage.json`.
-   Expected: no `incomplete` entry; `mailbox` (line 16) and `opts_value` (line 17) reported
-   as `credential-flow` with a `decision model p=` reason if the decision model judges them secrets.
-   The concatenated token on line 34 is one finding. One decision request (questions `C1`, `C2`,
-   `other`); the chat model is called only if the decision model answers `other` at or above the
-   threshold. Record `chat_calls`: values already reported are masked, so it measures real suspicion.
-2. **Reference file with AI.** `findmysecrets scan samples/app.py samples/FicheroT2.docx --ai triage`
-   gives the same finding per file as `--ai off`: one decision request per file, whose pack shows
-   `valid_password` masked; a chat call means the decision model suspected one of the remaining
-   literals (`admin`, prompts, SQL).
-3. **Negative cases.** `findmysecrets scan samples/negative_cases.py --ai triage` reports nothing.
-4. **Chat model citations.** `findmysecrets scan samples --ai full --format json` reports
-   `unverified: 0` or few; any `ai-*` finding points at a real literal. A chat answer that cites
-   only invalid ids is asked again once; a second one leaves that file incomplete.
-5. **Hook, in a throwaway repository.** After `findmysecrets install-hook`:
-   a staged secret blocks the commit, an unstaged one does not, a line marked `# IGNORE`
-   passes, and stopping Ollama blocks the commit as *incomplete* (exit 3).
-   Save the terminal output as `docs/evidence/hook.txt`.
-6. **Cost.** Note the time and number of calls printed by `--ai triage` and `--ai full`
-   on `samples/` (summary line) to compare both modes. If the chat model needs more than
-   the default 60 seconds during this benchmark, repeat the `full` run with `--timeout 120`;
-   keep the hook default unchanged unless repeated measurements justify raising it.
-
-Use synthetic secrets only.
+1. **Decision model contract.** Run `findmysecrets scan samples/flow_cases.py --ai triage --format json > docs/evidence/flow_triage.json`. Expect no `incomplete` entry; weak flow candidates should receive `decision model p=` when classified above the threshold, and the chat model is called only when the decision model also flags remaining uncategorized literals through `other`.
+2. **Reference files with AI.** Run `findmysecrets scan samples/app.py samples/FicheroT2.docx --ai triage`. The strong `valid_password` finding should match `--ai off` and be masked before model review; a chat call should happen only if remaining literals are considered suspicious.
+3. **Negative cases.** Run `findmysecrets scan samples/negative_cases.py --ai triage`. It should report no findings and no incomplete analysis.
+4. **Chat citations.** Run `findmysecrets scan samples --ai full --format json > docs/evidence/samples_full.json`. Any `ai-*` finding must cite a real literal; an answer containing only invalid literal ids is retried once, then leaves the file incomplete if still unusable.
+5. **Git hook.** In a throwaway repository, install the hooks and verify that a staged secret is blocked, an unstaged secret is ignored, `# IGNORE` passes, and an unavailable configured model makes the pre-commit analysis incomplete. Keep offline hook evidence separately in `docs/evidence/hook_offline.txt`.
+6. **Cost.** Compare the time and model-call counts printed by `--ai triage` and `--ai full` on `samples/`. If a chat request needs more than the default 60 seconds during benchmarking, repeat that run with `--timeout 120` rather than changing the hook default without repeated measurements.

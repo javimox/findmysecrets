@@ -211,6 +211,10 @@ Each finding has a stable ID derived from its file, detection rule, and secret v
 
 If AI fails, deterministic findings are still reported and the scan is marked incomplete.
 
+## Validation
+
+Live-model checks are documented in [`docs/validation.md`](docs/validation.md). Recorded offline evidence from real pre-commit and pre-push runs is in [`docs/evidence/hook_offline.txt`](docs/evidence/hook_offline.txt).
+
 ## Limits
 
 - Deep data-flow analysis is Python-specific.

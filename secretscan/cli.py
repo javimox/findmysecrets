@@ -71,16 +71,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--show-suppressed", action="store_true",
                    help=f"audit: also report findings marked IGNORE or listed in {ALLOW_FILE}")
 
-    ai = p.add_argument_group("AI (models served by Ollama by default)")
+    ai = p.add_argument_group("AI (endpoints default to local Ollama)")
     ai.add_argument("--ai", choices=("off", "triage", "full"), default=env("SECRETSCAN_AI", "off"),
                     help="off: rules and data flow; triage: the decision model decides, the chat model "
                          "locates; full: chat model on every pack")
-    ai.add_argument("--chat-model", default=env("SECRETSCAN_CHAT_MODEL", ""), help="e.g. qwen3:8b")
+    ai.add_argument("--chat-model", default=env("SECRETSCAN_CHAT_MODEL", ""),
+                    help="chat model for --ai full or escalated triage")
     ai.add_argument("--chat-url", default=env("SECRETSCAN_CHAT_URL", AIConfig.chat_url),
                     help="OpenAI-compatible API base, ending in /v1")
     ai.add_argument("--chat-api-key", default=env("SECRETSCAN_CHAT_API_KEY", ""),
                     help="prefer SECRETSCAN_CHAT_API_KEY (command lines are visible to other users)")
-    ai.add_argument("--decision-model", default=env("SECRETSCAN_DECISION_MODEL", AIConfig.decision_model))
+    ai.add_argument("--decision-model", default=env("SECRETSCAN_DECISION_MODEL", ""),
+                    help="decision model for --ai triage")
     ai.add_argument("--decision-url", default=env("SECRETSCAN_DECISION_URL", AIConfig.decision_url),
                     help="Ollama decision API base, ending in /v1")
     ai.add_argument("--threshold", type=float, default=AIConfig.threshold,
@@ -98,8 +100,17 @@ def _ai_config(args: argparse.Namespace, parser: argparse.ArgumentParser) -> AIC
     for url in (args.chat_url, args.decision_url):
         if urlsplit(url).scheme not in ("http", "https"):
             parser.error(f"model URLs must use http or https: {url}")
-    return AIConfig(args.ai, args.decision_url, args.decision_model, args.chat_url, args.chat_model,
-                    args.chat_api_key, args.threshold, args.timeout, args.max_ai_calls)
+    return AIConfig(
+        mode=args.ai,
+        decision_url=args.decision_url,
+        decision_model=args.decision_model,
+        chat_url=args.chat_url,
+        chat_model=args.chat_model,
+        chat_api_key=args.chat_api_key,
+        threshold=args.threshold,
+        timeout=args.timeout,
+        max_calls=args.max_ai_calls,
+    )
 
 
 def to_json(report: Report) -> str:

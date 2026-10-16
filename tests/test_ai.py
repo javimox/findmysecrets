@@ -15,7 +15,8 @@ POSITIONAL = 'conn = db.connect("db.internal", "app", "S3cr3t-pw-11")\n'
 
 
 def config(server, mode="triage", **kw) -> AIConfig:
-    return AIConfig(mode, decision_url=server.url + "/v1", chat_url=server.url + "/v1", chat_model="local-model", **kw)
+    return AIConfig(mode, decision_url=server.url + "/v1", decision_model="local-decision",
+                    chat_url=server.url + "/v1", chat_model="local-model", **kw)
 
 
 def write(tmp_path, name, text):
@@ -246,20 +247,38 @@ def test_probability_outside_range_is_rejected(tmp_path, ollama):
 # --------------------------------------------------------------------------- #
 def test_model_down_keeps_rule_findings_and_marks_incomplete(tmp_path):
     write(tmp_path, "a.py", kv("db_password", "Tr0ub4dor&3x") + "\n" + POSITIONAL)
-    report = scan(["a.py"], tmp_path, ai=AIConfig("triage", decision_url="http://127.0.0.1:9/v1", timeout=2))
+    cfg = AIConfig("triage", decision_url="http://127.0.0.1:9/v1",
+                   decision_model="local-decision", timeout=2)
+    report = scan(["a.py"], tmp_path, ai=cfg)
     assert [f.rule for f in report.findings] == ["hardcoded-credential"]
     assert report.incomplete and report.exit_code == 1
 
 
 def test_model_down_without_findings_exits_3(tmp_path):
-    report = scan(["a.py"], write(tmp_path, "a.py", POSITIONAL),
-                  ai=AIConfig("triage", decision_url="http://127.0.0.1:9/v1", timeout=2))
+    cfg = AIConfig("triage", decision_url="http://127.0.0.1:9/v1",
+                   decision_model="local-decision", timeout=2)
+    report = scan(["a.py"], write(tmp_path, "a.py", POSITIONAL), ai=cfg)
     assert report.findings == [] and report.exit_code == 3
+
+
+def test_triage_without_decision_model_is_incomplete(tmp_path):
+    report = scan(["a.py"], write(tmp_path, "a.py", POSITIONAL), ai=AIConfig("triage"))
+    assert report.exit_code == 3
+    assert "--decision-model" in report.incomplete[0]
+
+
+def test_full_mode_does_not_require_decision_model(tmp_path, ollama):
+    server = ollama(chat=lambda body: {"findings": []})
+    cfg = AIConfig("full", chat_url=server.url + "/v1", chat_model="local-model")
+    report = scan(["a.py"], write(tmp_path, "a.py", 'cfg_a = "q9-mixed-77zz"\n'), ai=cfg)
+    assert report.exit_code == 0
+    assert [path for path, _ in server.requests] == ["/v1/chat/completions"]
 
 
 def test_suspicion_without_chat_model_is_incomplete(tmp_path, ollama):
     server = ollama(decide=lambda body: {q: 0.95 if q == "other" else 0.0 for q in body["questions"]})
-    cfg = AIConfig("triage", decision_url=server.url + "/v1", chat_url=server.url + "/v1")    # no chat model
+    cfg = AIConfig("triage", decision_url=server.url + "/v1", decision_model="local-decision",
+                   chat_url=server.url + "/v1")    # no chat model
     report = scan(["a.py"], write(tmp_path, "a.py", 'cfg_a = "q9-mixed-77zz"\n'), ai=cfg)
     assert report.exit_code == 3 and "--chat-model" in report.incomplete[0]
 

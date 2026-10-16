@@ -1,7 +1,7 @@
 """The two models and the evidence pack they share.
 
 - decision model: Ollama's decision API, POST {decision_url}/systemone, yes/no questions
-  answered with probabilities (Clef-flash by default);
+  answered with probabilities;
 - chat model: any OpenAI-compatible POST {chat_url}/chat/completions.
 Both URLs end in /v1.
 
@@ -52,7 +52,7 @@ class AIError(Exception):
 class AIConfig:
     mode: str = "off"                          # off | triage | full
     decision_url: str = "http://localhost:11434/v1"
-    decision_model: str = "clef-flash"
+    decision_model: str = ""
     chat_url: str = "http://localhost:11434/v1"
     chat_model: str = ""
     chat_api_key: str = ""
@@ -164,6 +164,11 @@ class Models:
 
     def decide(self, pack: Pack) -> dict[str, float]:
         """Decision model: probability that each candidate, and anything else in the pack, is a secret."""
+        if not self.cfg.decision_model:
+            raise AIError(
+                "triage needs the decision model "
+                "(set --decision-model or SECRETSCAN_DECISION_MODEL)"
+            )
         questions = {cid: {"type": "noul", "criteria": CRITERIA,
                            "instructions": f"Is {lit.id} ({flow.reason}) a real hardcoded secret?"}
                      for cid, (lit, flow) in pack.candidates.items()}

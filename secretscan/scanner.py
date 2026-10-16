@@ -35,7 +35,7 @@ from .flow import Flow, Origin, Reader, analyze, lexical_slice, module_literals,
 CONFIDENCE = {LOW: 0, MEDIUM: 1, HIGH: 2}
 SKIP_DIRS = {".git", ".hg", ".svn", "__pycache__", ".venv", "venv", "node_modules",
              ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox"}
-MAX_FILE_BYTES = 10_000_000
+MAX_FILE_BYTES = 10_000_000  # 10 MB
 CONVERTED = (".docx", ".ipynb")                # documents converted to text before scanning
 PYTHON = (".py", *CONVERTED)                   # data flow: Python, also pasted in Word or in a notebook
 ALLOW_FILE = ".secretscan-allow"               # one finding id per line: reviewed false positives
@@ -330,10 +330,11 @@ def _walk(target: Path, root: Path, excludes: tuple[str, ...], report: Report) -
         yield target
     else:
         for dirpath, dirnames, filenames in os.walk(target):          # does not follow links
-            excluded = [d for d in dirnames if is_excluded(_rel(Path(dirpath, d), root) + "/", excludes)]
+            excluded = {d for d in dirnames if is_excluded(_rel(Path(dirpath, d), root) + "/", excludes)}
+            skipped = {d for d in dirnames if d in SKIP_DIRS or d.endswith(".egg-info")}
             report.excluded += len(excluded)                            # pruned, never walked
-            report.dirs_skipped += sum(d in SKIP_DIRS for d in dirnames)
-            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and d not in excluded)
+            report.dirs_skipped += len(skipped)
+            dirnames[:] = sorted(d for d in dirnames if d not in skipped and d not in excluded)
             for name in sorted(filenames):
                 path = Path(dirpath) / name
                 if path.is_symlink():

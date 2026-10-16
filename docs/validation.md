@@ -9,6 +9,7 @@ ones; run them once and keep the outputs in `docs/evidence/`.
 ollama --version                  # >= 0.35.1 (decision models: POST /v1/systemone)
 ollama pull clef-flash
 ollama pull <chat model>          # prefer a model that runs on this machine
+export SECRETSCAN_DECISION_MODEL=clef-flash
 export SECRETSCAN_CHAT_MODEL=<chat model>    # URLs default to http://localhost:11434/v1
 ```
 

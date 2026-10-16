@@ -79,10 +79,12 @@ def test_hidden_files_are_scanned_and_dependencies_are_skipped(tmp_path, monkeyp
     (tmp_path / ".env").write_text(kv("DB_PASSWORD", PW, sep="=", quote="") + "\n")
     (tmp_path / "node_modules").mkdir()
     (tmp_path / "node_modules" / "x.js").write_text(kv("password", PW) + "\n")
+    (tmp_path / "package.egg-info").mkdir()
+    (tmp_path / "package.egg-info" / "PKG-INFO").write_text(kv("password", PW) + "\n")
     monkeypatch.chdir(tmp_path)
     _, out = run(["scan", "--format", "json"], capsys)
     report = json.loads(out.out)
-    assert [f["file"] for f in report["findings"]] == [".env"] and report["summary"]["dirs_skipped"] == 1
+    assert [f["file"] for f in report["findings"]] == [".env"] and report["summary"]["dirs_skipped"] == 2
 
 
 def test_symlinks_are_not_followed_out_of_the_tree(tmp_path, monkeypatch, capsys):

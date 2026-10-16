@@ -78,6 +78,66 @@ Repository-specific exclusions:
 git config --add findmysecrets.exclude 'samples/*'
 ```
 
+### Quick hook check
+
+Use a temporary repository so the checks do not modify your project:
+
+```sh
+TESTDIR=$(mktemp -d)
+REMOTE=$(mktemp -d)/remote.git
+cd "$TESTDIR"
+
+git init -b main
+git config user.name "FindMySecrets Test"
+git config user.email "test@example.invalid"
+printf 'print("clean")\n' > app.py
+git add app.py
+git commit -m "Initial clean commit"
+
+git init --bare "$REMOTE"
+git remote add origin "$REMOTE"
+git push -u origin main
+findmysecrets install-hook
+```
+
+**1. Pre-commit blocks a secret.** The commit should fail with exit code `1`.
+
+```sh
+cat > secret.py <<'EOF'
+password = "SuperSecret-2026!"
+EOF
+git add secret.py
+SECRETSCAN_AI=off git commit -m "Add secret"
+echo "exit=$?"
+
+git reset -- secret.py
+rm secret.py
+```
+
+**2. `# IGNORE` suppresses a false positive.** The commit should succeed with exit code `0`.
+
+```sh
+cat > ignored.py <<'EOF'
+TEST_PASSWORD = "fake-integration-password"  # IGNORE
+EOF
+git add ignored.py
+SECRETSCAN_AI=off git commit -m "Add ignored test credential"
+echo "exit=$?"
+git push origin main
+```
+
+**3. Pre-push catches a secret committed with `--no-verify`.** The commit should succeed, but the push should fail with exit code `1`.
+
+```sh
+cat > leaked.py <<'EOF'
+password = "BypassedSecret-2026!"
+EOF
+git add leaked.py
+git commit --no-verify -m "Bypass pre-commit"
+git push origin main
+echo "exit=$?"
+```
+
 ## False positives
 
 In source files:

@@ -78,7 +78,7 @@ Repository-specific exclusions:
 git config --add findmysecrets.exclude 'samples/*'
 ```
 
-### Quick hook check
+### Hook tests
 
 Use a temporary repository so the checks do not modify your project:
 
@@ -152,7 +152,9 @@ For formats where comments are unsuitable:
 findmysecrets allow FINDING_ID "test credential"
 ```
 
-The reviewed IDs are stored in `.secretscan-allow`.
+Each finding has a stable ID derived from its file, detection rule, and secret value.
+The ID lets you suppress a reviewed false positive with `findmysecrets allow <ID> "reason"`.
+Approved IDs are stored in the versioned `.secretscan-allow` file, so the exception remains auditable and stops applying if the secret value changes.
 
 ## Exit codes
 

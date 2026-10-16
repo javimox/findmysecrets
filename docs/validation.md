@@ -15,7 +15,7 @@ export SECRETSCAN_CHAT_MODEL=<chat model>    # URLs default to http://localhost:
 
 Before the checks, make one decision and one chat request, then run `ollama ps` on each
 server: both models must be loaded, at `100% GPU`. If one Ollama serves both, set
-`OLLAMA_MAX_LOADED_MODELS=2` and `OLLAMA_KEEP_ALIVE=30m` there (see the README, *AI modes*).
+`OLLAMA_MAX_LOADED_MODELS=2` and `OLLAMA_KEEP_ALIVE=30m` there.
 
 ## Checks
 

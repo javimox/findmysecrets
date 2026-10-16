@@ -12,14 +12,20 @@ Using `uv`:
 ```sh
 uv venv
 source .venv/bin/activate
-uv pip install -e '.[dev]'
-```
-
-For runtime only:
-
-```sh
 uv pip install -e .
 ```
+
+For development, testing, linting, and type checking: `uv pip install -e '.[dev]'`.
+
+Without `uv`:
+
+```sh
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
+
+For development, testing, linting, and type checking: `python -m pip install -e '.[dev]'`.
 
 ## Quick start
 
@@ -48,11 +54,11 @@ Hidden files such as `.env` are scanned. `.docx` and `.ipynb` are converted to t
 | `--history` | Scan lines introduced by past commits; rules only |
 | `--pushed REMOTE` | Scan commits being pushed; pre-push hook mode, rules only |
 | `--range REVS` | Revision selection for `--history`, e.g. `origin/main..HEAD` |
-| `--format text|json` | Output format; default `text` |
+| `--format FORMAT` | Output format: `text` or `json`; default `text` |
 | `--exclude GLOB` | Exclude repository-relative paths; repeatable |
-| `--min-confidence low|medium|high` | Minimum reported confidence; default `low` |
+| `--min-confidence LEVEL` | Minimum reported confidence: `low`, `medium`, or `high`; default `low` |
 | `--show-suppressed` | Also show findings suppressed by `IGNORE` or `.secretscan-allow` |
-| `--ai off|triage|full` | Select deterministic, triage, or full AI review; default `off` |
+| `--ai MODE` | AI mode: `off`, `triage`, or `full`; default `off` |
 | `--decision-model MODEL` | Decision model used by `triage` |
 | `--decision-url URL` | Decision API base; default `http://localhost:11434/v1` |
 | `--chat-model MODEL` | Chat model used by `full` or escalated triage |
@@ -66,7 +72,11 @@ Hidden files such as `.env` are scanned. `.docx` and `.ipynb` are converted to t
 
 ## Data flow and content slices
 
-Rules catch obvious literals, while Python analysis also follows values from their definitions to credential-sensitive uses such as password arguments. For staged changes, Python flow is checked locally against the relevant source, while AI receives a content slice: changed lines plus the definitions and uses needed to understand them, with original line numbers. Other languages use a bounded lexical slice based on shared identifiers instead of Python AST data flow.
+FindMySecrets combines deterministic rule-based detection with deep data-flow analysis for Python. Python AST analysis follows literals through assignments and imports to credential-sensitive sinks and builds a structural content slice around changed code; other languages use a bounded lexical slice based on shared identifiers. These slices give AI the relevant context without sending whole files unnecessarily.
+
+For staged Python changes, a **security delta** compares the Git index with `HEAD` and reports only newly introduced flows or exposures. Pre-existing flows, pure moves, and formatting-only changes are not repeatedly reported.
+
+Minimal examples for rules, Python data flow, AI triage, and generative review are included in `samples/`.
 
 ## AI modes
 
@@ -89,7 +99,7 @@ export SECRETSCAN_CHAT_MODEL=qwen3.5:9b
 findmysecrets scan . --ai triage
 ```
 
-AI mode, model names, URLs, and the chat API key can also be set with the corresponding `SECRETSCAN_*` environment variables. Values already confirmed locally are masked with asterisks before a model receives the evidence pack. Unresolved candidate literals remain visible so the models can classify them, so configure endpoints you trust.
+AI mode, model names, URLs, and the chat API key can also be set with the corresponding `SECRETSCAN_*` environment variables. Secrets already confirmed by deterministic rules or strong data flow are replaced with asterisks before the evidence pack is sent to either AI model. Ambiguous candidate literals remain visible when AI must classify them, so configure endpoints you trust.
 
 HTTP redirects are never followed.
 

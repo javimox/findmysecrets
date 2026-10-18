@@ -84,13 +84,13 @@ Minimal examples for rules, Python data flow, AI triage, and generative review a
 
 ## AI modes
 
-| Mode | Behaviour |
-|---|---|
-| `--ai off` | Rules and Python data flow only |
-| `--ai triage` | Decision model first; chat model only when needed |
-| `--ai full` | Chat model reviews every evidence pack; decision model is unused |
+`--ai off`: runs deterministic rules and local context analysis. Python gets AST-based data-flow tracking; other text formats use bounded lexical context.
 
-`triage` requires an explicitly configured decision model when a pack needs model review. `full` requires a chat model; the pre-commit hook uses `triage` unless `SECRETSCAN_AI` overrides it.
+`--ai triage`: ambiguous candidates are reviewed by the decision model. The LLM chat model is only used when further localisation or classification is needed.
+
+`--ai full`: skips the decision model and sends all ambiguous candidates to the LLM chat model.
+
+`triage` requires an explicitly configured decision model when a candidate needs model review. `full` requires a chat model; the pre-commit hook uses `triage` unless `SECRETSCAN_AI=off|full` overrides it.
 
 Example with local models:
 

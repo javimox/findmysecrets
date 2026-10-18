@@ -1,6 +1,7 @@
 """Command line: formats, options, exit codes and the Git hooks."""
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -31,8 +32,9 @@ def test_findings_exit_1_with_why_and_redaction(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     code, out = run(["scan"], capsys)
     assert code == 1
-    assert "app.py:1:13  hardcoded-credential [medium]" in out.out
-    assert "why: credential-like name receives a literal" in out.out
+    assert "app.py:1:13" in out.out
+    assert "MEDIUM  hardcoded-credential" in out.out
+    assert "why    credential-like name receives a literal" in out.out
     assert PW not in out.out
 
 
@@ -108,6 +110,21 @@ def test_text_output_cannot_be_rewritten_by_file_names_or_reasons():
     assert out.startswith("evil?0 finding(s)?[2K.py:1:1")
 
 
+def test_text_ai_summary_separates_decision_and_chat_calls():
+    report = Report("files", ai="triage", files_scanned=1, ai_calls=5, chat_calls=1)
+    out = to_text(report)
+    assert "AI mode: triage\nDecision model calls: 4\nLLM chat calls: 1\nTotal AI calls: 5" in out
+
+
+def test_text_color_is_opt_in_and_only_adds_ansi():
+    report = Report("files")
+    report.add(Finding("hardcoded-credential", "app.py", 1, 1, PW, confidence="high", found_by=["rules"]))
+    plain = to_text(report)
+    colored = to_text(report, color=True)
+    assert "\x1b[" not in plain and "\x1b[" in colored
+    assert re.sub(r"\x1b\[[0-9;]*m", "", colored) == plain
+
+
 def test_large_generated_file_is_fast(tmp_path, monkeypatch, capsys):
     (tmp_path / "bundle.js").write_text("\n".join(f'const v{i} = "value-{i:06d}";' for i in range(4000)))
     monkeypatch.chdir(tmp_path)
@@ -175,7 +192,7 @@ def test_real_git_push_goes_through_the_hook(repo, tmp_path_factory, monkeypatch
     repo.write("app.py", "print('hi')")
     repo.git("add", "app.py")
     repo.git("commit", "-q", "--no-verify", "-m", "clean")
-    assert "0 finding(s) in 1 file(s) of 1 commit(s)" in push().stdout
+    assert "0 findings in 1 file across 1 commit" in push().stdout
     repo.write("app.py", kv("db_password", PW))
     repo.git("add", "app.py")
     repo.git("commit", "-q", "--no-verify", "-m", "leak")
@@ -187,7 +204,7 @@ def test_real_git_push_goes_through_the_hook(repo, tmp_path_factory, monkeypatch
     repo.git("add", "app.py")
     repo.git("commit", "-q", "--no-verify", "-m", "from the environment")
     accepted = push()
-    assert accepted.returncode == 0 and "of 1 commit(s)" in accepted.stdout
+    assert accepted.returncode == 0 and "across 1 commit" in accepted.stdout
 
 
 def test_hooks_never_overwrite_a_foreign_hook(repo):
@@ -218,7 +235,7 @@ def test_allow_marks_a_false_positive_by_id(repo, monkeypatch, capsys):
     assert run(["allow", f["id"]], capsys)[0] == 0                                # listed once
     assert (repo.path / ".secretscan-allow").read_text() == f"{f['id']}  # test fixture [2K\n"
     code, out = run(["scan"], capsys)
-    assert code == 0 and "0 finding(s) in 1 file(s); 1 suppressed" in out.out
+    assert code == 0 and "0 findings in 1 file | 1 suppressed" in out.out
     assert run(["scan", "--show-suppressed"], capsys)[0] == 1
 
 

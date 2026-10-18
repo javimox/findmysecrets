@@ -124,26 +124,65 @@ def _printable(text: str) -> str:
     return "".join(ch if ch.isprintable() else "?" for ch in text)
 
 
-def to_text(report: Report) -> str:
-    out = []
-    for f in report.findings:
+def _style(text: str, code: str, color: bool) -> str:
+    return f"\x1b[{code}m{text}\x1b[0m" if color else text
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun if n == 1 else noun + 's'}"
+
+
+def to_text(report: Report, *, color: bool = False) -> str:
+    """Human-readable report. ANSI color is opt-in so pipes, files and tests stay plain."""
+    out: list[str] = []
+    confidence_style = {"high": "1;31", "medium": "1;33", "low": "1;34"}
+
+    for i, f in enumerate(report.findings):
+        if i:
+            out.append("")
         r = redact(f.secret)
         where = _printable(f"{f.file}:{f.line}:{f.column}") + (f" (commit {f.commit[:10]})" if f.commit else "")
         key = f"{_printable(f.key)} = " if f.key else ""
-        out.append(f"{where}  {f.rule} [{f.confidence}]  {key}{r['prefix']}...{r['suffix']} "
-                   f"({r['length']} chars)  id={f.id}")
-        out.append(f"    why: {_printable('; '.join(f.why))}")
-        out.append(f"    by:  {', '.join(f.found_by)}")
+        value = f"{key}{r['prefix']}...{r['suffix']}"
+        severity = _style(f"{f.confidence.upper():<7}", confidence_style.get(f.confidence, "1"), color)
+        rule = _style(f"{_printable(f.rule):<22}", "1", color)
+
+        out.append(_style(where, "1;36", color))
+        out.append(f"  {severity} {rule} {value}")
+        out.append(f"  {_style('why   ', '1;36', color)} {_printable('; '.join(f.why))}")
+        out.append(f"  {_style('via   ', '1;35', color)} {' → '.join(f.found_by)}")
+        out.append(f"  {_style('id    ', '2', color)} {f.id}")
+
+    if report.findings:
+        out.append("")
     s = report.summary()
-    commits = f" of {s['commits_scanned']} commit(s)" if "commits_scanned" in s else ""
-    out.append(f"{s['findings']} finding(s) in {s['files_scanned']} file(s){commits}; {s['suppressed']} suppressed; "
-               f"{s['files_skipped']} skipped, {s['excluded']} excluded")
-    out.append("AI: off (rules only)" if commits else "AI: off (rules and data flow only)" if report.ai == "off" else
-               f"AI: {report.ai}, {s['ai_calls']} model call(s), {s['chat_calls']} to the chat model, "
-               f"{s['unverified']} unverified citation(s)")
-    out += [f"INCOMPLETE: {_printable(msg)}" for msg in report.incomplete]
+    summary = f"{_count(s['findings'], 'finding')} in {_count(s['files_scanned'], 'file')}"
+    if "commits_scanned" in s:
+        summary += f" across {_count(s['commits_scanned'], 'commit')}"
+    details = []
+    for key, label in (("suppressed", "suppressed"), ("files_skipped", "skipped"), ("excluded", "excluded")):
+        if s[key]:
+            details.append(f"{s[key]} {label}")
+    if details:
+        summary += " | " + " | ".join(details)
+    summary_code = "1;31" if s["findings"] else "1;32"
+    out.append(_style(summary, summary_code, color))
+
+    if report.ai == "off":
+        scope = "rules only" if "commits_scanned" in s else "rules + data flow"
+        out.append(f"AI mode: off ({scope})")
+    else:
+        decision_calls = s["ai_calls"] - s["chat_calls"]
+        out.append(f"AI mode: {report.ai}")
+        out.append(f"Decision model calls: {decision_calls}")
+        out.append(f"LLM chat calls: {s['chat_calls']}")
+        out.append(f"Total AI calls: {s['ai_calls']}")
+        if s["unverified"]:
+            out.append(f"Unverified citations: {s['unverified']}")
+
+    out += [_style(f"INCOMPLETE: {_printable(msg)}", "1;33", color) for msg in report.incomplete]
     if report.exit_code and (blocked := BLOCKED.get((report.mode, bool(report.findings)))):
-        out.append(blocked)
+        out.append(_style(blocked, "1;31", color))
     return "\n".join(out)
 
 
@@ -214,7 +253,8 @@ def main(argv: list[str] | None = None) -> int:
     except ScanError as exc:
         print(f"findmysecrets: error: {exc}", file=sys.stderr)
         return EXIT_ERROR
-    print(to_json(report) if args.format == "json" else to_text(report))
+    color = args.format == "text" and sys.stdout.isatty() and "NO_COLOR" not in os.environ
+    print(to_json(report) if args.format == "json" else to_text(report, color=color))
     return report.exit_code
 
 

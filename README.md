@@ -70,6 +70,8 @@ Hidden files such as `.env` are scanned. `.docx` and `.ipynb` are converted to t
 
 `--range` only applies to `--history`; `--pushed` is normally invoked by the installed hook. Run `findmysecrets scan --help` for the authoritative CLI help.
 
+Interactive text output uses ANSI colors and a compact, structured finding layout. Colors are disabled automatically for pipes and files; set `NO_COLOR` to disable them in a terminal.
+
 ## Data flow and content slices
 
 FindMySecrets combines deterministic rule-based detection with deep data-flow analysis for Python. Python AST analysis follows literals through assignments and imports to credential-sensitive sinks and builds a structural content slice around changed code; other languages use a bounded lexical slice based on shared identifiers. These slices give AI the relevant context without sending whole files unnecessarily.
@@ -213,7 +215,7 @@ If AI fails, deterministic findings are still reported and the scan is marked in
 
 ## Validation
 
-Live-model checks are documented in [`docs/validation.md`](docs/validation.md). Recorded offline evidence from real pre-commit and pre-push runs is in [`docs/evidence/hook_offline.txt`](docs/evidence/hook_offline.txt).
+Live-model checks are in [`docs/validation.md`](docs/validation.md). Refresh the offline hook evidence with `python scripts/test_hooks.py`; the transcript is stored in [`docs/evidence/hook_offline.txt`](docs/evidence/hook_offline.txt).
 
 ## Limits
 

@@ -175,6 +175,36 @@ def test_hook_without_models_fails_closed(repo):
     assert proc.returncode == 3 and "analysis is incomplete" in proc.stdout
 
 
+def test_real_pre_commit_uses_ai_triage(repo, monkeypatch, ollama):
+    """The installed pre-commit hook defaults to triage and can reach both AI stages."""
+    server = ollama(
+        decide=lambda body: {q: 0.9 if q == "other" else 0.0 for q in body["questions"]},
+        chat=lambda body: {"findings": [{"literal": "L1.1", "type": "api_key", "reason": "hardcoded key"}]},
+    )
+    install_hooks(repo.path)
+    monkeypatch.setenv("PYTHONPATH", str(ROOT))
+    monkeypatch.delenv("SECRETSCAN_AI", raising=False)
+    monkeypatch.setenv("SECRETSCAN_DECISION_MODEL", "test-decision")
+    monkeypatch.setenv("SECRETSCAN_DECISION_URL", server.url + "/v1")
+    monkeypatch.setenv("SECRETSCAN_CHAT_MODEL", "test-chat")
+    monkeypatch.setenv("SECRETSCAN_CHAT_URL", server.url + "/v1")
+
+    repo.write("app.py", 'cfg_a = "q9-mixed-77zz"')
+    repo.git("add", "app.py")
+    proc = subprocess.run(
+        ["git", "commit", "-m", "AI triage"],
+        cwd=repo.path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = proc.stdout + proc.stderr
+    assert proc.returncode == 1 and "Commit blocked" in output
+    assert [path for path, _ in server.requests] == ["/v1/systemone", "/v1/chat/completions"]
+    assert "AI mode: triage" in output
+    assert "Decision model calls: 1" in output and "LLM chat calls: 1" in output
+
+
 def test_real_git_push_goes_through_the_hook(repo, tmp_path_factory, monkeypatch):
     """A commit that skipped the pre-commit hook (--no-verify) is stopped at `git push`;
     commits the remote already holds are not checked again."""

@@ -114,6 +114,8 @@ findmysecrets install-hook
 - **pre-commit** scans the Git index with rules, Python data flow, and AI triage.
 - **pre-push** scans commits about to be uploaded using deterministic rules.
 
+The pre-commit hook defaults to `triage`; findings already confirmed by rules or strong data flow do not need a model call. Pre-push is a deterministic backstop for commits that skipped pre-commit.
+
 Run a deterministic-only commit with:
 
 ```sh

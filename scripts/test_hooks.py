@@ -98,6 +98,86 @@ def sample_assignment(
     return f'{"".join(name_parts)} = "{"".join(value_parts)}"{suffix}\n'
 
 
+def prepare_repo(base: Path) -> tuple[Path, Path]:
+    repo = base / "repo"
+    remote = base / "remote.git"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    (repo / "initial.py").write_text('print("clean")\n', encoding="utf-8")
+    git(repo, "add", "initial.py")
+    git(repo, "commit", "-qm", "initial")
+    return repo, remote
+
+
+def test_pre_commit(lines: list[str], repo: Path, remote: Path) -> None:
+    proc = tool(repo, "install-hook")
+    record(lines, "findmysecrets install-hook", proc, repo, remote)
+
+    # A staged secret must be blocked by pre-commit.
+    (repo / "secret.py").write_text(
+        sample_assignment(("pass", "word"), ("Super", "Secret", "-2026!")), encoding="utf-8"
+    )
+    git(repo, "add", "secret.py")
+    proc = run(["git", "commit", "-m", "add secret"], repo, run_env=env())
+    record(lines, "git commit -m 'add secret'", proc, repo, remote)
+    git(repo, "reset", "-q")
+    (repo / "secret.py").unlink()
+
+    # An unstaged secret must not affect a clean staged commit.
+    (repo / "tracked.py").write_text('print("clean")\n', encoding="utf-8")
+    git(repo, "add", "tracked.py")
+    git(repo, "commit", "--no-verify", "-qm", "add tracked file")
+    (repo / "tracked.py").write_text(
+        sample_assignment(("pass", "word"), ("Unstaged", "Secret", "-2026!")), encoding="utf-8"
+    )
+    (repo / "staged.py").write_text("value = 1\n", encoding="utf-8")
+    git(repo, "add", "staged.py")
+    proc = run(["git", "commit", "-m", "clean staged change"], repo, run_env=env())
+    record(
+        lines,
+        "git commit -m 'clean staged change'  # secret exists only unstaged",
+        proc,
+        repo,
+        remote,
+    )
+    git(repo, "restore", "tracked.py")
+
+    # The inline false-positive marker must suppress the finding.
+    (repo / "ignored.py").write_text(
+        sample_assignment(("pass", "word"), ("Fixture", "Secret", "-2026!"), ignore=True), encoding="utf-8"
+    )
+    git(repo, "add", "ignored.py")
+    proc = run(["git", "commit", "-m", "test fixture"], repo, run_env=env())
+    record(lines, "git commit -m 'test fixture'  # inline IGNORE", proc, repo, remote)
+
+    # Triage without a configured decision model must fail closed.
+    (repo / "legacy.py").write_text(
+        'conn = db.connect("db.internal", "app", "S3cr3t-pw-11")\n', encoding="utf-8"
+    )
+    git(repo, "add", "legacy.py")
+    proc = run(["git", "commit", "-m", "legacy"], repo, run_env=env())
+    record(lines, "git commit -m 'legacy'  # no decision model configured", proc, repo, remote)
+    git(repo, "reset", "-q")
+    (repo / "legacy.py").unlink()
+
+
+def test_pre_push(lines: list[str], base: Path, repo: Path, remote: Path) -> None:
+    # A local bare remote proves pre-push catches a commit made with --no-verify.
+    git(base, "init", "-q", "--bare", str(remote))
+    git(repo, "remote", "add", "origin", str(remote))
+    proc = run(["git", "push", "-u", "origin", "main"], repo, run_env=env())
+    record(lines, "git push -u origin main", proc, repo, remote)
+
+    (repo / "pushed_secret.py").write_text(
+        sample_assignment(("api", "_token"), ("tok-", "demo-", "secret-", "2026")), encoding="utf-8"
+    )
+    git(repo, "add", "pushed_secret.py")
+    proc = run(["git", "commit", "--no-verify", "-m", "bypass pre-commit"], repo, run_env=env())
+    record(lines, "git commit --no-verify -m 'bypass pre-commit'", proc, repo, remote)
+    proc = run(["git", "push", "origin", "main"], repo, run_env=env())
+    record(lines, "git push origin main", proc, repo, remote)
+
+
 def main() -> int:
     version = run([sys.executable, "-m", "secretscan", "--version"], ROOT, run_env=env()).stdout.strip()
     lines = [
@@ -108,79 +188,9 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="findmysecrets-evidence-") as tmp:
         base = Path(tmp)
-        repo = base / "repo"
-        remote = base / "remote.git"
-        repo.mkdir()
-
-        git(repo, "init", "-q", "-b", "main")
-        (repo / "initial.py").write_text('print("clean")\n', encoding="utf-8")
-        git(repo, "add", "initial.py")
-        git(repo, "commit", "-qm", "initial")
-
-        proc = tool(repo, "install-hook")
-        record(lines, "findmysecrets install-hook", proc, repo, remote)
-
-        # A staged secret must be blocked by pre-commit.
-        (repo / "secret.py").write_text(
-            sample_assignment(("pass", "word"), ("Super", "Secret", "-2026!")), encoding="utf-8"
-        )
-        git(repo, "add", "secret.py")
-        proc = run(["git", "commit", "-m", "add secret"], repo, run_env=env(ai="off"))
-        record(lines, "SECRETSCAN_AI=off git commit -m 'add secret'", proc, repo, remote)
-        git(repo, "reset", "-q")
-        (repo / "secret.py").unlink()
-
-        # An unstaged secret must not affect a clean staged commit.
-        (repo / "tracked.py").write_text('print("clean")\n', encoding="utf-8")
-        git(repo, "add", "tracked.py")
-        git(repo, "commit", "--no-verify", "-qm", "add tracked file")
-        (repo / "tracked.py").write_text(
-            sample_assignment(("pass", "word"), ("Unstaged", "Secret", "-2026!")), encoding="utf-8"
-        )
-        (repo / "staged.py").write_text('print("staged clean change")\n', encoding="utf-8")
-        git(repo, "add", "staged.py")
-        proc = run(["git", "commit", "-m", "clean staged change"], repo, run_env=env(ai="off"))
-        record(
-            lines,
-            "SECRETSCAN_AI=off git commit -m 'clean staged change'  # secret exists only unstaged",
-            proc,
-            repo,
-            remote,
-        )
-        git(repo, "restore", "tracked.py")
-
-        # The inline false-positive marker must suppress the finding.
-        (repo / "ignored.py").write_text(
-            sample_assignment(("pass", "word"), ("Fixture", "Secret", "-2026!"), ignore=True), encoding="utf-8"
-        )
-        git(repo, "add", "ignored.py")
-        proc = run(["git", "commit", "-m", "test fixture"], repo, run_env=env(ai="off"))
-        record(lines, "SECRETSCAN_AI=off git commit -m 'test fixture'  # inline IGNORE", proc, repo, remote)
-
-        # Triage without a configured decision model must fail closed.
-        (repo / "legacy.py").write_text(
-            'conn = db.connect("db.internal", "app", "S3cr3t-pw-11")\n', encoding="utf-8"
-        )
-        git(repo, "add", "legacy.py")
-        proc = run(["git", "commit", "-m", "legacy"], repo, run_env=env())
-        record(lines, "git commit -m 'legacy'  # no decision model configured", proc, repo, remote)
-        git(repo, "reset", "-q")
-        (repo / "legacy.py").unlink()
-
-        # Establish a local bare remote, then prove pre-push catches a commit made with --no-verify.
-        git(base, "init", "-q", "--bare", str(remote))
-        git(repo, "remote", "add", "origin", str(remote))
-        proc = run(["git", "push", "-u", "origin", "main"], repo, run_env=env())
-        record(lines, "git push -u origin main", proc, repo, remote)
-
-        (repo / "pushed_secret.py").write_text(
-            sample_assignment(("api", "_token"), ("tok-", "demo-", "secret-", "2026")), encoding="utf-8"
-        )
-        git(repo, "add", "pushed_secret.py")
-        proc = run(["git", "commit", "--no-verify", "-m", "bypass pre-commit"], repo, run_env=env())
-        record(lines, "git commit --no-verify -m 'bypass pre-commit'", proc, repo, remote)
-        proc = run(["git", "push", "origin", "main"], repo, run_env=env())
-        record(lines, "git push origin main", proc, repo, remote)
+        repo, remote = prepare_repo(base)
+        test_pre_commit(lines, repo, remote)
+        test_pre_push(lines, base, repo, remote)
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")

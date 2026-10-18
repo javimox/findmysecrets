@@ -5,6 +5,8 @@ It combines deterministic rules, Python data-flow analysis, and optional AI revi
 
 Python 3.11+. Runtime uses only the standard library.
 
+![FindMySecrets demo](docs/findmysecrets-demo.gif)
+
 ## Install
 
 Using `uv`:

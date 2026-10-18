@@ -165,8 +165,7 @@ def to_text(report: Report, *, color: bool = False) -> str:
             details.append(f"{s[key]} {label}")
     if details:
         summary += " | " + " | ".join(details)
-    summary_code = "1;31" if s["findings"] else "1;32"
-    out.append(_style(summary, summary_code, color))
+    out.append(_style(summary, "1", color))
 
     if report.ai == "off":
         scope = "rules only" if "commits_scanned" in s else "rules + data flow"

@@ -3,11 +3,11 @@
 FindMySecrets detects hardcoded secrets in source code and Git workflows.
 It combines deterministic rules, Python data-flow analysis, and optional AI review for ambiguous cases. Secret values are redacted in the output.
 
-Python 3.11+. Runtime uses only the standard library.
-
-![FindMySecrets demo](docs/findmysecrets-demo.gif)
+![FindMySecrets demo](docs/demo.gif)
 
 ## Install
+
+Python 3.11+. Runtime uses only the standard library.
 
 Using `uv`:
 
